@@ -1,15 +1,15 @@
 const BASE = 'https://v3.football.api-sports.io'
 
-function headers() {
+function apiHeaders() {
   return { 'x-apisports-key': process.env.API_FOOTBALL_KEY }
 }
 
 async function apiFetch(path) {
-  const res = await fetch(`${BASE}${path}`, { headers: headers() })
+  const res = await fetch(`${BASE}${path}`, { headers: apiHeaders() })
   if (!res.ok) throw new Error(`API-Football ${res.status}: ${res.statusText}`)
   const data = await res.json()
   if (data.errors && Object.keys(data.errors).length > 0) {
-    throw new Error(`API-Football error: ${JSON.stringify(data.errors)}`)
+    throw new Error(`API-Football: ${JSON.stringify(data.errors)}`)
   }
   return data
 }
@@ -31,31 +31,44 @@ function formatFixture(f) {
     league: f.league.name,
     status: f.fixture.status.long,
     score: f.goals.home !== null ? `${f.goals.home}-${f.goals.away}` : null,
-    winner: f.teams.home.winner === true
-      ? f.teams.home.name
-      : f.teams.away.winner === true
-        ? f.teams.away.name
-        : f.teams.home.winner === false && f.teams.away.winner === false
-          ? 'Draw'
-          : null,
+    winner:
+      f.teams.home.winner === true
+        ? f.teams.home.name
+        : f.teams.away.winner === true
+          ? f.teams.away.name
+          : f.teams.home.winner === false && f.teams.away.winner === false
+            ? 'Draw'
+            : null,
   }
 }
 
-export async function searchFixtures(teamName, next = 5) {
+export async function searchFixtures(teamName) {
   const team = await findTeam(teamName)
   if (!team) return { error: `Team "${teamName}" not found` }
 
-  const id = team.team.id
-  const [upcomingData, recentData] = await Promise.all([
-    apiFetch(`/fixtures?team=${id}&next=${next}&timezone=Europe/London`),
-    apiFetch(`/fixtures?team=${id}&last=5&timezone=Europe/London`),
+  const teamId = team.team.id
+
+  // Today's fixtures across all leagues (free plan supports this)
+  const today = new Date().toISOString().split('T')[0]
+  const [todayData, recentData] = await Promise.all([
+    apiFetch(`/fixtures?date=${today}&timezone=Europe/London`),
+    apiFetch(`/fixtures?team=${teamId}&season=2024&status=FT`),
   ])
+
+  const todayForTeam = (todayData.response || []).filter(
+    f => f.teams.home.id === teamId || f.teams.away.id === teamId
+  )
+
+  const recent = (recentData.response || [])
+    .sort((a, b) => new Date(b.fixture.date) - new Date(a.fixture.date))
+    .slice(0, 5)
 
   return {
     team: team.team.name,
     country: team.team.country,
-    upcoming: (upcomingData.response || []).map(formatFixture),
-    recent: (recentData.response || []).map(formatFixture),
+    today: todayForTeam.map(formatFixture),
+    recentResults: recent.map(formatFixture),
+    note: "Upcoming fixtures beyond today require a paid API plan. Recent results are from the 2024/25 season.",
   }
 }
 
@@ -72,7 +85,7 @@ export async function getTeamStats(teamName, leagueId) {
   return {
     team: s.team?.name,
     league: s.league?.name,
-    season: s.league?.season,
+    season: '2024/25',
     form: s.form,
     played: s.fixtures?.played,
     wins: s.fixtures?.wins,

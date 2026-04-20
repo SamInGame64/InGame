@@ -1,4 +1,11 @@
-import 'dotenv/config'
+import { createRequire } from 'module'
+import { resolve } from 'path'
+import { fileURLToPath } from 'url'
+
+const require = createRequire(import.meta.url)
+const dotenv = require('dotenv')
+dotenv.config({ path: resolve(fileURLToPath(import.meta.url), '../../.env'), override: true })
+
 import express from 'express'
 import chatRouter from './routes/chat.js'
 

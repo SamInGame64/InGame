@@ -2,7 +2,11 @@ import Anthropic from '@anthropic-ai/sdk'
 import { searchFixtures, getTeamStats } from './football.js'
 import { getOdds } from './odds.js'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+let _client
+function getClient() {
+  if (!_client) _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  return _client
+}
 
 const SYSTEM = `You are InGame, an AI sports betting research assistant for UK users. You provide data-driven analysis on football matches, odds, and betting markets.
 
@@ -19,7 +23,7 @@ const tools = [
   {
     name: 'search_fixtures',
     description:
-      'Search upcoming and recent fixtures for a football team. Returns match dates, opponents, venues, scores and results.',
+      "Search today's fixtures and recent results for a football team. Returns today's match (if any), plus the last 5 completed results from the 2024/25 season.",
     input_schema: {
       type: 'object',
       properties: {
@@ -88,7 +92,7 @@ async function executeTool(name, input) {
 export async function chat(messages) {
   const history = messages.map(({ role, content }) => ({ role, content }))
 
-  let response = await client.messages.create({
+  let response = await getClient().messages.create({
     model: 'claude-sonnet-4-6',
     max_tokens: 1024,
     system: SYSTEM,
@@ -110,7 +114,7 @@ export async function chat(messages) {
     history.push({ role: 'assistant', content: response.content })
     history.push({ role: 'user', content: toolResults })
 
-    response = await client.messages.create({
+    response = await getClient().messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 1024,
       system: SYSTEM,
