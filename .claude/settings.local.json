@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(update-config)",
+      "Skill(update-config:*)",
+      "Bash(gh auth *)",
+      "Bash(brew install *)",
+      "Bash(git init *)",
+      "Bash(git commit *)",
+      "Bash(gh repo *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(npm create *)",
+      "Bash(npx create-vite@latest . --template react)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:3000)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git add *)"
+    ]
+  }
+}
