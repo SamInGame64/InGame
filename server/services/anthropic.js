@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { searchFixtures, getTeamStats } from './football.js'
-import { getOdds } from './odds.js'
+import { getOdds, getGoalscorerOdds } from './odds.js'
 import { searchPlayer, getTopPlayers } from './fpl.js'
 import { getStandings, getHeadToHead, getSquad, getTeamRecentResults } from './footballdata.js'
 
@@ -22,6 +22,7 @@ Read the user's message and pick the single best category:
 - **TEAM_FORM** — asking about a team's recent results, run of form, current momentum
 - **PLAYER_FORM** — asking about a player's current season stats, goals, assists, recent performances
 - **NEWS** — asking about injuries, suspensions, availability, team news, likely lineups
+- **PREDICTION** — phrased as "who is most likely to…", "who do you think will…", "who will score", "who's going to win" — these are odds questions in disguise
 
 ## Step 2 — Call only the tools that category needs
 
@@ -33,6 +34,7 @@ Read the user's message and pick the single best category:
 | TEAM_FORM | get_recent_results | odds, player stats, standings |
 | PLAYER_FORM | get_player_stats | everything else |
 | NEWS | get_player_stats (has injury/availability data for PL players) | odds, H2H |
+| PREDICTION | get_goalscorer_odds first, then get_player_stats for 1–2 key players if relevant injury or form context exists | standings, H2H, team stats |
 
 Never call more tools than the category requires. One focused answer beats a data dump.
 
@@ -49,6 +51,12 @@ Never call more tools than the category requires. One focused answer beats a dat
 **PLAYER_FORM:** Goals, assists, xG, xA, minutes, form rating. One paragraph. No team stats, no odds.
 
 **NEWS:** Availability status, chance of playing %, and the injury/news string from FPL. If the player is available, say so clearly. Note that live press conference lineups are not available.
+
+**PREDICTION:** You do not make predictions. Frame everything as what the market is implying:
+- Lead with: "Based on the bookmakers…" or "The market is suggesting…" — never "I think" or "X will"
+- If first/anytime goalscorer odds are available: list the shortest-priced players as what bookmakers consider most likely, with their prices
+- If scorer odds are unavailable: use match result odds to identify the favourite, then use player form to indicate the likely attacking threats — be explicit this is form context, not a prediction
+- Follow up (briefly) with any relevant injury or availability flags from get_player_stats — only if the player is at risk of not playing
 
 ## General rules
 - Use UK English
@@ -175,6 +183,26 @@ const tools = [
     },
   },
   {
+    name: 'get_goalscorer_odds',
+    description:
+      'Get first goalscorer and anytime goalscorer odds from UK bookmakers for a match. Use this for PREDICTION questions: "who is most likely to score", "who will score first", "who do you think will get on the scoresheet". Falls back to match result odds if scorer markets are unavailable.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sport_key: {
+          type: 'string',
+          description:
+            'soccer_epl (Premier League), soccer_uefa_champs_league (Champions League), soccer_spain_la_liga (La Liga), soccer_italy_serie_a (Serie A), soccer_germany_bundesliga (Bundesliga), soccer_france_ligue_one (Ligue 1)',
+        },
+        team_name: {
+          type: 'string',
+          description: 'One of the team names in the match to filter results',
+        },
+      },
+      required: ['sport_key', 'team_name'],
+    },
+  },
+  {
     name: 'get_top_players',
     description:
       'Get top Premier League players ranked by a stat for 2024/25 (FPL API). Use for "who are the top scorers" type questions.',
@@ -196,7 +224,8 @@ async function executeTool(name, input) {
   try {
     switch (name) {
       case 'search_fixtures':    return await searchFixtures(input.team_name)
-      case 'get_odds':           return await getOdds(input.sport_key, input.team_name)
+      case 'get_odds':              return await getOdds(input.sport_key, input.team_name)
+      case 'get_goalscorer_odds':   return await getGoalscorerOdds(input.sport_key, input.team_name)
       case 'get_team_stats':     return await getTeamStats(input.team_name, input.league_id)
       case 'get_standings':      return await getStandings(input.competition)
       case 'get_head_to_head':   return await getHeadToHead(input.team1, input.team2)
