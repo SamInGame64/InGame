@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { searchFixtures, getTeamStats } from './football.js'
 import { getOdds } from './odds.js'
+import { searchPlayer, getTopPlayers } from './fpl.js'
 
 let _client
 function getClient() {
@@ -76,6 +77,41 @@ const tools = [
       required: ['team_name', 'league_id'],
     },
   },
+  {
+    name: 'get_player_stats',
+    description:
+      'Get current 2024/25 Premier League season stats for a specific player from the Fantasy Premier League API. Returns goals, assists, minutes, xG, xA, form, FPL points and price. Use this whenever a user asks about a specific player.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        player_name: {
+          type: 'string',
+          description: 'Player name or surname e.g. "Salah", "Erling Haaland", "Saka"',
+        },
+      },
+      required: ['player_name'],
+    },
+  },
+  {
+    name: 'get_top_players',
+    description:
+      'Get the top Premier League players ranked by a specific stat for the 2024/25 season. Use when the user asks who the top scorers, assisters, or best performers are.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        stat: {
+          type: 'string',
+          description:
+            'Stat to rank by: goals_scored, assists, total_points, minutes, clean_sheets, saves, bonus',
+        },
+        limit: {
+          type: 'number',
+          description: 'Number of players to return (default 10)',
+        },
+      },
+      required: ['stat'],
+    },
+  },
 ]
 
 async function executeTool(name, input) {
@@ -83,6 +119,8 @@ async function executeTool(name, input) {
     if (name === 'search_fixtures') return await searchFixtures(input.team_name, input.next || 5)
     if (name === 'get_odds') return await getOdds(input.sport_key, input.team_name)
     if (name === 'get_team_stats') return await getTeamStats(input.team_name, input.league_id)
+    if (name === 'get_player_stats') return await searchPlayer(input.player_name)
+    if (name === 'get_top_players') return await getTopPlayers(input.stat, input.limit || 10)
     return { error: `Unknown tool: ${name}` }
   } catch (err) {
     return { error: err.message }
