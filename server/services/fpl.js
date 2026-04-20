@@ -70,6 +70,9 @@ export async function searchPlayer(playerName, topN = 1) {
     expectedAssists: p.expected_assists,
     expectedGoalInvolvements: p.expected_goal_involvements,
     expectedGoalsConceded: p.expected_goals_conceded,
+    availabilityStatus: { a: 'Available', i: 'Injured', d: 'Doubtful', s: 'Suspended', u: 'Unavailable' }[p.status] || p.status,
+    news: p.news || null,
+    chanceOfPlayingNextRound: p.chance_of_playing_next_round,
   }))
 }
 
