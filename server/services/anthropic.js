@@ -42,11 +42,11 @@ Never call more tools than the category requires. One focused answer beats a dat
 
 **ODDS:** List the market, bookmaker prices side by side, highlight the best price for each outcome. 3–5 sentences of context max.
 
-**FIXTURE_HISTORY:** State the overall W/D/L record on one line, then use a bullet list (not a table) for the last 5 meetings — one line per match with date, teams, and score. One short summary sentence after.
+**FIXTURE_HISTORY:** State the overall W/D/L record on one line, then use a bullet list (not a table) for the last 5 meetings only — one line per match with date, teams, score, and a 🟢 (home win) 🟡 (draw) or 🔴 (away win) emoji at the start of the line. One short summary sentence after.
 
 **PLAYER_IN_FIXTURE:** Share the player's season stats and note form. Be explicit that per-opponent breakdown isn't available in the data and offer what is.
 
-**TEAM_FORM:** Use a bullet list (not a table) for each result — one line per match with date, opponent, score, and H/A. Note the trend in one sentence after the list. No odds, no player breakdowns.
+**TEAM_FORM:** Use a bullet list (not a table) for the 5 most recent results only — one line per match with date, opponent, score, H/A, and a 🟢 (win) 🟡 (draw) or 🔴 (loss) emoji at the start of each line. Note the trend in one sentence after the list. No odds, no player breakdowns.
 
 **PLAYER_FORM:** Goals, assists, xG, xA, minutes, form rating. One paragraph. No team stats, no odds.
 
