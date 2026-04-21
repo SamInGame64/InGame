@@ -19,15 +19,12 @@ const LEAGUE_ID = 8 // Premier League (confirmed via Sportmonks docs)
 const _teamCache = new Map()
 const _playerCache = new Map()
 
-function headers() {
-  return { Authorization: `Bearer ${process.env.SPORTMONKS_API_KEY}` }
-}
-
 async function smFetch(path, params = {}) {
   const url = new URL(`${BASE}${path}`)
+  url.searchParams.set('api_token', process.env.SPORTMONKS_API_KEY)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
 
-  const res = await fetch(url.toString(), { headers: headers() })
+  const res = await fetch(url.toString())
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`Sportmonks ${res.status}: ${text.slice(0, 200)}`)
@@ -118,10 +115,9 @@ export async function getCurrentFixtures(teamName) {
 
 export async function getStandings() {
   try {
-    // Get the current season for the Premier League
-    const seasonsData = await smFetch('/seasons', { filters: `leagueId:${LEAGUE_ID}`, per_page: 5 })
-    const seasons = Array.isArray(seasonsData.data) ? seasonsData.data : []
-    const currentSeason = seasons.sort((a, b) => b.id - a.id)[0]
+    // Get current season via league endpoint
+    const leagueData = await smFetch(`/leagues/${LEAGUE_ID}`, { include: 'currentSeason' })
+    const currentSeason = leagueData.data?.currentseason
     if (!currentSeason) return { error: 'Could not find current Premier League season' }
 
     const data = await smFetch(`/standings/seasons/${currentSeason.id}`, {
@@ -219,10 +215,9 @@ export async function getPlayerStats(playerName) {
     const player = await searchPlayerLive(playerName)
     if (!player) return { error: `Player not found: ${playerName}` }
 
-    // Get current season stats
-    const seasonsData = await smFetch('/seasons', { filters: `leagueId:${LEAGUE_ID}`, per_page: 5 })
-    const seasons = Array.isArray(seasonsData.data) ? seasonsData.data : []
-    const currentSeason = seasons.sort((a, b) => b.id - a.id)[0]
+    // Get current season via league endpoint
+    const leagueData = await smFetch(`/leagues/${LEAGUE_ID}`, { include: 'currentSeason' })
+    const currentSeason = leagueData.data?.currentseason
 
     const statsData = await smFetch(`/players/${player.id}`, {
       include: 'statistics.details;currentTeam',
