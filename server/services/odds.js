@@ -3,7 +3,10 @@ const BASE = 'https://api.the-odds-api.com/v4'
 const MARKET_LABELS = {
   h2h: 'Match Result',
   totals: 'Over/Under Goals',
+  btts: 'Both Teams to Score',
   spreads: 'Asian Handicap',
+  alternate_totals_corners: 'Corners Over/Under',
+  alternate_totals_cards: 'Cards Over/Under',
   player_goal_scorer_anytime: 'Anytime Goalscorer',
   player_goal_scorer_first: 'First Goalscorer',
   player_goal_scorer_last: 'Last Goalscorer',
@@ -102,9 +105,37 @@ function formatEvents(events, teamName, limit = 8) {
 }
 
 export async function getOdds(sportKey, teamName) {
-  const events = await fetchMarkets(sportKey, 'h2h,totals')
+  const events = await fetchMarkets(sportKey, 'h2h,totals,btts')
   if (!events) throw new Error('Odds API request failed')
   return formatEvents(events, teamName)
+}
+
+export async function getSpecialMarkets(sportKey, teamName) {
+  const events = await fetchMarkets(sportKey, 'alternate_totals_corners,alternate_totals_cards,spreads').catch(() => null)
+
+  if (!events || !Array.isArray(events)) {
+    return { available: false, message: 'Special markets (corners, cards, handicap) are not currently available for this competition.' }
+  }
+
+  const formatted = formatEvents(events, teamName, 4)
+  const hasData = formatted.some(e => e.bookmakers.some(b => b.markets.length > 0))
+
+  if (!hasData) {
+    return { available: false, message: 'Corners, cards, and handicap markets are not yet available for this match. They typically appear closer to kick-off.' }
+  }
+
+  // Flag which specific markets have data
+  const sample = formatted.flatMap(e => e.bookmakers.flatMap(b => b.markets.map(m => m.type)))
+  const unique = [...new Set(sample)]
+
+  return {
+    available: true,
+    marketsPresent: unique,
+    cornersAvailable: unique.includes('Corners Over/Under'),
+    cardMarketsAvailable: unique.includes('Cards Over/Under'),
+    handicapAvailable: unique.includes('Asian Handicap'),
+    events: formatted,
+  }
 }
 
 export async function getGoalscorerOdds(sportKey, teamName) {

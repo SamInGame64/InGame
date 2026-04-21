@@ -8,12 +8,22 @@ dotenv.config({ path: resolve(fileURLToPath(import.meta.url), '../../.env'), ove
 
 import express from 'express'
 import chatRouter from './routes/chat.js'
+import { getDb } from './db/index.js'
 
-const requiredEnv = ['ANTHROPIC_API_KEY', 'API_FOOTBALL_KEY', 'ODDS_API_KEY', 'FOOTBALL_DATA_KEY']
+const requiredEnv = ['ANTHROPIC_API_KEY', 'SPORTMONKS_API_KEY', 'ODDS_API_KEY']
 const missing = requiredEnv.filter(k => !process.env[k])
 if (missing.length > 0) {
   console.error(`Missing environment variables: ${missing.join(', ')}`)
-  console.error('Create a .env file — see .env.example for the required keys.')
+  console.error('Add them to your .env file.')
+  process.exit(1)
+}
+
+// Initialise SQLite — creates the file and runs schema migrations on first run
+try {
+  getDb()
+  console.log('SQLite database initialised')
+} catch (err) {
+  console.error('Failed to initialise SQLite database:', err.message)
   process.exit(1)
 }
 

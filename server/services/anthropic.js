@@ -1,8 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { searchFixtures, getTeamStats } from './football.js'
-import { getOdds, getGoalscorerOdds } from './odds.js'
+import {
+  getCurrentFixtures,
+  getStandings,
+  getInjuries,
+  getLineup,
+  getPlayerStats,
+  getH2H,
+  getPlayerHistoryVsOpponent,
+  getRecentResults,
+} from './sportmonks.js'
 import { searchPlayer, getTopPlayers } from './fpl.js'
-import { getStandings, getHeadToHead, getSquad, getTeamRecentResults } from './footballdata.js'
+import { getOdds, getGoalscorerOdds, getSpecialMarkets } from './odds.js'
 
 let _client
 function getClient() {
@@ -14,128 +22,122 @@ const SYSTEM = `You are InGame, an AI sports betting research assistant for UK u
 
 ## Step 1 — Classify the request into exactly one category
 
-Read the user's message and pick the single best category:
-
-- **ODDS** — asking about prices, best bookmaker, value, a specific bet market
+- **ODDS** — asking about prices, best bookmaker, value, match result / over-under / BTTS markets
+- **SPECIAL_MARKETS** — asking about corners, yellow cards, Asian handicap, bookings markets
 - **FIXTURE_HISTORY** — asking about H2H record, previous meetings, historical results between two teams
-- **PLAYER_IN_FIXTURE** — asking how a specific player performs against a specific opponent
+- **PLAYER_IN_FIXTURE** — asking how a specific player performs against a specific opponent (e.g. "how has Salah done vs Man City")
 - **TEAM_FORM** — asking about a team's recent results, run of form, current momentum
 - **PLAYER_FORM** — asking about a player's current season stats, goals, assists, recent performances
 - **NEWS** — asking about injuries, suspensions, availability, team news, likely lineups
-- **PREDICTION** — phrased as "who is most likely to…", "who do you think will…", "who will score", "who's going to win" — these are odds questions in disguise
+- **PREDICTION** — phrased as "who is most likely to…", "who do you think will…", "who will score", "who's going to win"
 
 ## Step 2 — Call only the tools that category needs
 
 | Category | Tools to call | Do NOT call |
 |---|---|---|
 | ODDS | get_odds | everything else |
-| FIXTURE_HISTORY | get_head_to_head | odds, player stats, standings |
-| PLAYER_IN_FIXTURE | get_player_stats | odds, H2H, team stats |
+| SPECIAL_MARKETS | get_special_markets | odds, player stats |
+| FIXTURE_HISTORY | get_h2h | odds, player stats, standings |
+| PLAYER_IN_FIXTURE | get_player_history | odds, H2H, team stats |
 | TEAM_FORM | get_recent_results | odds, player stats, standings |
-| PLAYER_FORM | get_player_stats | everything else |
-| NEWS | get_player_stats (has injury/availability data for PL players) | odds, H2H |
-| PREDICTION | get_goalscorer_odds first, then get_player_stats for 1–2 key players if relevant injury or form context exists | standings, H2H, team stats |
+| PLAYER_FORM | get_player_stats (Sportmonks) + get_player_availability (FPL) | everything else |
+| NEWS | get_injuries for team news; get_lineup if asking about lineups | odds, H2H |
+| PREDICTION | get_goalscorer_odds first, then get_player_stats for 1–2 key players if injury context is relevant | standings, H2H |
 
-Never call more tools than the category requires. One focused answer beats a data dump.
+Never call more tools than the category requires.
 
 ## Step 3 — Respond with only what was asked
 
-**ODDS:** List the market, bookmaker prices side by side, highlight the best price for each outcome. 3–5 sentences of context max.
+**ODDS:** List the market, each bookmaker on its own line with their logo. Highlight the best price for each outcome. Include Match Result, Over/Under, and Both Teams to Score if available. 3–5 sentences of context max.
 
-**FIXTURE_HISTORY:** State the overall W/D/L record on one line, then use a bullet list (not a table) for the last 5 meetings only — one line per match with date, teams, score, and a 🟢 (home win) 🟡 (draw) or 🔴 (away win) emoji at the start of the line. One short summary sentence after.
+**SPECIAL_MARKETS:** If available, list corners / cards / handicap lines per bookmaker. If unavailable, say so clearly — these markets typically appear closer to kick-off.
 
-**PLAYER_IN_FIXTURE:** Share the player's season stats and note form. Be explicit that per-opponent breakdown isn't available in the data and offer what is.
+**FIXTURE_HISTORY:** State the overall W/D/L record on one line, then use a bullet list (not a table) for the last 5 meetings — one line per match with date, teams, and score. Prefix each line with 🟢 (home win) 🟡 (draw) 🔴 (away win). One short summary sentence after.
 
-**TEAM_FORM:** Use a bullet list (not a table) for the 5 most recent results only — one line per match with date, opponent, score, H/A, and a 🟢 (win) 🟡 (draw) or 🔴 (loss) emoji at the start of each line. Note the trend in one sentence after the list. No odds, no player breakdowns.
+**PLAYER_IN_FIXTURE:** Lead with career appearances vs that opponent, then goals/assists/avg rating from the historical database. Note this is historical data. One paragraph max.
 
-**PLAYER_FORM:** Goals, assists, xG, xA, minutes, form rating. One paragraph. No team stats, no odds.
+**TEAM_FORM:** Use a bullet list (not a table) for the 5 most recent results — one line per match with date, opponent, score, H/A, and 🟢 (win) 🟡 (draw) 🔴 (loss) at the start. Note the trend in one sentence after.
 
-**NEWS:** Availability status, chance of playing %, and the injury/news string from FPL. If the player is available, say so clearly. Note that live press conference lineups are not available.
+**PLAYER_FORM:** Goals, assists, minutes, yellow cards, and rating from Sportmonks. Add FPL availability status and form rating if available. One paragraph. No team stats, no odds.
+
+**NEWS:** Lead with injury list from get_injuries. If lineup is requested, use get_lineup. Note that live press conference lineups may not be confirmed yet.
 
 **PREDICTION:** You do not make predictions. Frame everything as what the market is implying:
-- Lead with: "Based on the bookmakers…" or "The market is suggesting…" — never "I think" or "X will"
-- If first/anytime goalscorer odds are available: list the shortest-priced players as what bookmakers consider most likely, with their prices
-- If scorer odds are unavailable: use match result odds to identify the favourite, then use player form to indicate the likely attacking threats — be explicit this is form context, not a prediction
-- Follow up (briefly) with any relevant injury or availability flags from get_player_stats — only if the player is at risk of not playing
+- Lead with "Based on the bookmakers…" or "The market is suggesting…" — never "I think" or "X will"
+- List the shortest-priced goalscorer candidates with their prices
+- Follow with any relevant injury flags — only if the player is at risk of not playing
 
 ## General rules
 - Use UK English
-- **Always display odds in UK fractional format** (e.g. 4/6, 2/1, 11/4) — the data includes a "fractional" field on every outcome, use it
-- **Never put bookmaker odds in a table.** Each bookmaker must be its own separate line using exactly this markdown format:
+- **Always display odds in UK fractional format** (e.g. 4/6, 2/1, 11/4) — use the "fractional" field on every outcome
+- **Never put bookmaker odds in a table.** Each bookmaker must be its own separate line:
   ![BookmakerName](logoUrl) **BookmakerName** — Home X/Y · Draw X/Y · Away X/Y
-  The logoUrl comes from the data. If a bookmaker has no logoUrl, just write the name without an image.
-- Keep responses short — tables are only for league standings and player stat comparisons. Use bullet lists for match results, scorelines, and fixture histories. Never use tables for bookmaker odds lines.
-- Only append the responsible gambling reminder when you are recommending a specific bet to place`
+- Keep responses short — tables are only for league standings and player stat comparisons. Use bullet lists for match results, scorelines, and fixture histories.
+- Historical player-vs-opponent data comes from a local SQLite database seeded from Sportmonks. First-time queries may take a moment to seed.
+- If a market or data point is unavailable, say so plainly — never invent or estimate odds.
+- Only append the responsible gambling reminder when recommending a specific bet to place.`
 
 const tools = [
   {
-    name: 'search_fixtures',
-    description:
-      "Search today's fixtures and recent results for a football team (API-Football). Returns today's match if any, plus last 5 completed results from the 2024/25 season.",
+    name: 'get_fixtures',
+    description: 'Get upcoming fixtures and recent results for a Premier League team (Sportmonks). Returns next 5 fixtures.',
     input_schema: {
       type: 'object',
       properties: {
-        team_name: { type: 'string', description: 'Team name e.g. Arsenal, Liverpool, Real Madrid' },
+        team_name: { type: 'string', description: 'Team name e.g. Arsenal, Liverpool, Manchester City' },
       },
       required: ['team_name'],
     },
   },
   {
-    name: 'get_odds',
-    description: 'Get live UK bookmaker odds (Bet365, William Hill, Paddy Power etc.) for matches in a competition.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        sport_key: {
-          type: 'string',
-          description:
-            'soccer_epl (Premier League), soccer_uefa_champs_league (Champions League), soccer_spain_la_liga (La Liga), soccer_italy_serie_a (Serie A), soccer_germany_bundesliga (Bundesliga), soccer_france_ligue_one (Ligue 1)',
-        },
-        team_name: {
-          type: 'string',
-          description: 'Optional — filter to matches involving this team',
-        },
-      },
-      required: ['sport_key'],
-    },
-  },
-  {
-    name: 'get_team_stats',
-    description:
-      'Get 2024/25 season statistics for a team from API-Football: form string, goals scored/conceded, wins/draws/losses, clean sheets, biggest wins.',
+    name: 'get_recent_results',
+    description: "Get a team's last 5 completed results across all competitions (Sportmonks). Use for TEAM_FORM queries.",
     input_schema: {
       type: 'object',
       properties: {
         team_name: { type: 'string', description: 'Team name' },
-        league_id: {
-          type: 'number',
-          description:
-            '39 = Premier League, 140 = La Liga, 135 = Serie A, 78 = Bundesliga, 61 = Ligue 1, 2 = Champions League',
-        },
+        limit: { type: 'number', description: 'Number of results (default 5, max 10)' },
       },
-      required: ['team_name', 'league_id'],
+      required: ['team_name'],
     },
   },
   {
-    name: 'get_standings',
-    description:
-      'Get the current league table from football-data.org. Returns positions, points, GD, form for all clubs.',
+    name: 'get_player_stats',
+    description: 'Get current season stats for a Premier League player from Sportmonks: goals, assists, minutes, cards, rating.',
     input_schema: {
       type: 'object',
       properties: {
-        competition: {
-          type: 'string',
-          description:
-            'Competition code or name: PL (Premier League), CL (Champions League), PD (La Liga), BL1 (Bundesliga), SA (Serie A), FL1 (Ligue 1), ELC (Championship)',
-        },
+        player_name: { type: 'string', description: 'Player name or surname e.g. "Salah", "Haaland", "Saka"' },
       },
-      required: ['competition'],
+      required: ['player_name'],
     },
   },
   {
-    name: 'get_head_to_head',
-    description:
-      'Get historical head-to-head record between two teams from football-data.org. Returns overall W/D/L tally and last 5 meetings with scores.',
+    name: 'get_player_availability',
+    description: 'Get FPL availability status, form rating, and injury news for a Premier League player. Use alongside get_player_stats for PLAYER_FORM queries.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        player_name: { type: 'string', description: 'Player name or surname' },
+      },
+      required: ['player_name'],
+    },
+  },
+  {
+    name: 'get_player_history',
+    description: 'Get a player\'s historical stats against a specific opponent — appearances, goals, assists, avg rating — from the local SQLite database (lazy-seeded from Sportmonks). Use for PLAYER_IN_FIXTURE queries.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        player_name: { type: 'string', description: 'Player name e.g. "Salah", "Haaland"' },
+        opponent_team: { type: 'string', description: 'Opponent team name e.g. "Manchester City", "Arsenal"' },
+      },
+      required: ['player_name', 'opponent_team'],
+    },
+  },
+  {
+    name: 'get_h2h',
+    description: 'Get historical head-to-head record between two teams from the local SQLite database (lazy-seeded from Sportmonks). Returns W/D/L tally and last 5 scorelines.',
     input_schema: {
       type: 'object',
       properties: {
@@ -146,9 +148,17 @@ const tools = [
     },
   },
   {
-    name: 'get_squad',
-    description:
-      'Get the full squad list and coaching staff for a team from football-data.org. Useful for injury context and squad depth questions.',
+    name: 'get_standings',
+    description: 'Get the current Premier League table from Sportmonks — positions, points, GD, form.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'get_injuries',
+    description: 'Get current injury and suspension list for a Premier League team from Sportmonks.',
     input_schema: {
       type: 'object',
       properties: {
@@ -158,64 +168,62 @@ const tools = [
     },
   },
   {
-    name: 'get_recent_results',
-    description:
-      'Get a team\'s last N results across all competitions from football-data.org. More comprehensive than search_fixtures as it covers cup games and European fixtures.',
+    name: 'get_lineup',
+    description: 'Get the confirmed or expected lineup for a specific fixture from Sportmonks.',
     input_schema: {
       type: 'object',
       properties: {
-        team_name: { type: 'string', description: 'Team name' },
-        limit: { type: 'number', description: 'Number of results to return (default 10, max 20)' },
+        fixture_id: { type: 'number', description: 'Sportmonks fixture ID — obtain from get_fixtures first' },
       },
-      required: ['team_name'],
+      required: ['fixture_id'],
     },
   },
   {
-    name: 'get_player_stats',
-    description:
-      'Get 2024/25 season stats for a Premier League player from the FPL API: goals, assists, xG, xA, minutes, form, FPL price. Use whenever a user mentions a specific player.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        player_name: {
-          type: 'string',
-          description: 'Player name or surname e.g. "Salah", "Haaland", "Saka"',
-        },
-      },
-      required: ['player_name'],
-    },
-  },
-  {
-    name: 'get_goalscorer_odds',
-    description:
-      'Get first goalscorer and anytime goalscorer odds from UK bookmakers for a match. Use this for PREDICTION questions: "who is most likely to score", "who will score first", "who do you think will get on the scoresheet". Falls back to match result odds if scorer markets are unavailable.',
+    name: 'get_odds',
+    description: 'Get live UK bookmaker odds for a match — Match Result, Over/Under Goals, and Both Teams to Score (BTTS). Use for ODDS queries.',
     input_schema: {
       type: 'object',
       properties: {
         sport_key: {
           type: 'string',
-          description:
-            'soccer_epl (Premier League), soccer_uefa_champs_league (Champions League), soccer_spain_la_liga (La Liga), soccer_italy_serie_a (Serie A), soccer_germany_bundesliga (Bundesliga), soccer_france_ligue_one (Ligue 1)',
+          description: 'soccer_epl (Premier League), soccer_uefa_champs_league, soccer_spain_la_liga, soccer_italy_serie_a, soccer_germany_bundesliga, soccer_france_ligue_one',
         },
-        team_name: {
-          type: 'string',
-          description: 'One of the team names in the match to filter results',
-        },
+        team_name: { type: 'string', description: 'Filter to matches involving this team' },
+      },
+      required: ['sport_key'],
+    },
+  },
+  {
+    name: 'get_goalscorer_odds',
+    description: 'Get first goalscorer and anytime goalscorer odds from UK bookmakers. Use for PREDICTION queries about who will score.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sport_key: { type: 'string', description: 'soccer_epl, soccer_uefa_champs_league, etc.' },
+        team_name: { type: 'string', description: 'One of the teams in the match' },
+      },
+      required: ['sport_key', 'team_name'],
+    },
+  },
+  {
+    name: 'get_special_markets',
+    description: 'Get corners over/under, yellow cards over/under, and Asian handicap odds from UK bookmakers. Use for SPECIAL_MARKETS queries.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sport_key: { type: 'string', description: 'soccer_epl, soccer_uefa_champs_league, etc.' },
+        team_name: { type: 'string', description: 'One of the teams in the match' },
       },
       required: ['sport_key', 'team_name'],
     },
   },
   {
     name: 'get_top_players',
-    description:
-      'Get top Premier League players ranked by a stat for 2024/25 (FPL API). Use for "who are the top scorers" type questions.',
+    description: 'Get top Premier League players ranked by a stat for 2024/25 (FPL API). Use for "who are the top scorers" questions.',
     input_schema: {
       type: 'object',
       properties: {
-        stat: {
-          type: 'string',
-          description: 'goals_scored, assists, total_points, minutes, clean_sheets, saves, bonus',
-        },
+        stat: { type: 'string', description: 'goals_scored, assists, total_points, minutes, clean_sheets, saves, bonus' },
         limit: { type: 'number', description: 'Number of players to return (default 10)' },
       },
       required: ['stat'],
@@ -226,16 +234,19 @@ const tools = [
 async function executeTool(name, input) {
   try {
     switch (name) {
-      case 'search_fixtures':    return await searchFixtures(input.team_name)
+      case 'get_fixtures':          return await getCurrentFixtures(input.team_name)
+      case 'get_recent_results':    return await getRecentResults(input.team_name, Math.min(input.limit || 5, 10))
+      case 'get_player_stats':      return await getPlayerStats(input.player_name)
+      case 'get_player_availability': return await searchPlayer(input.player_name)
+      case 'get_player_history':    return await getPlayerHistoryVsOpponent(input.player_name, input.opponent_team)
+      case 'get_h2h':               return await getH2H(input.team1, input.team2)
+      case 'get_standings':         return await getStandings()
+      case 'get_injuries':          return await getInjuries(input.team_name)
+      case 'get_lineup':            return await getLineup(input.fixture_id)
       case 'get_odds':              return await getOdds(input.sport_key, input.team_name)
       case 'get_goalscorer_odds':   return await getGoalscorerOdds(input.sport_key, input.team_name)
-      case 'get_team_stats':     return await getTeamStats(input.team_name, input.league_id)
-      case 'get_standings':      return await getStandings(input.competition)
-      case 'get_head_to_head':   return await getHeadToHead(input.team1, input.team2)
-      case 'get_squad':          return await getSquad(input.team_name)
-      case 'get_recent_results': return await getTeamRecentResults(input.team_name, Math.min(input.limit || 10, 20))
-      case 'get_player_stats':   return await searchPlayer(input.player_name)
-      case 'get_top_players':    return await getTopPlayers(input.stat, input.limit || 10)
+      case 'get_special_markets':   return await getSpecialMarkets(input.sport_key, input.team_name)
+      case 'get_top_players':       return await getTopPlayers(input.stat, input.limit || 10)
       default: return { error: `Unknown tool: ${name}` }
     }
   } catch (err) {
