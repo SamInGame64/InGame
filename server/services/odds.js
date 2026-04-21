@@ -10,6 +10,56 @@ const MARKET_LABELS = {
   bookie_scorer: 'First Goalscorer',
 }
 
+const BOOKMAKER_META = {
+  'Betfair':      { domain: 'betfair.com' },
+  'Betfair Exchange': { domain: 'betfair.com' },
+  'William Hill': { domain: 'williamhill.com' },
+  'Bet365':       { domain: 'bet365.com' },
+  'Paddy Power':  { domain: 'paddypower.com' },
+  'Sky Bet':      { domain: 'skybet.com' },
+  'Unibet':       { domain: 'unibet.co.uk' },
+  'Coral':        { domain: 'coral.co.uk' },
+  'Ladbrokes':    { domain: 'ladbrokes.com' },
+  'Betway':       { domain: 'betway.com' },
+  'BoyleSports':  { domain: 'boylesports.com' },
+  'BetVictor':    { domain: 'betvictor.com' },
+  '888sport':     { domain: '888sport.com' },
+  'Spreadex':     { domain: 'spreadex.com' },
+  'Matchbook':    { domain: 'matchbook.com' },
+}
+
+function logoUrl(name) {
+  const meta = BOOKMAKER_META[name]
+  return meta ? `https://www.google.com/s2/favicons?domain=${meta.domain}&sz=32` : null
+}
+
+function gcd(a, b) {
+  return b === 0 ? a : gcd(b, a % b)
+}
+
+export function decimalToFractional(decimal) {
+  if (!decimal || decimal <= 1) return 'N/A'
+  if (Math.abs(decimal - 2.0) < 0.005) return 'Evs'
+
+  const value = decimal - 1
+  let bestNum = 1, bestDen = 1, bestErr = Infinity
+
+  for (let den = 1; den <= 100; den++) {
+    const num = Math.round(value * den)
+    if (num <= 0) continue
+    const err = Math.abs(value - num / den)
+    if (err < bestErr) {
+      bestErr = err
+      bestNum = num
+      bestDen = den
+    }
+    if (bestErr < 0.005) break
+  }
+
+  const g = gcd(bestNum, bestDen)
+  return `${bestNum / g}/${bestDen / g}`
+}
+
 async function fetchMarkets(sportKey, markets) {
   const key = process.env.ODDS_API_KEY
   const url = `${BASE}/sports/${sportKey}/odds?apiKey=${key}&regions=uk&markets=${markets}&oddsFormat=decimal`
@@ -35,13 +85,15 @@ function formatEvents(events, teamName, limit = 8) {
   return filtered.map(event => ({
     match: `${event.home_team} vs ${event.away_team}`,
     commenceTime: event.commence_time,
-    bookmakers: (event.bookmakers || []).slice(0, 4).map(b => ({
+    bookmakers: (event.bookmakers || []).slice(0, 5).map(b => ({
       name: b.title,
+      logoUrl: logoUrl(b.title),
       markets: (b.markets || []).map(m => ({
         type: MARKET_LABELS[m.key] || m.key,
         outcomes: m.outcomes.map(o => ({
           name: o.name,
-          price: o.price,
+          decimal: o.price,
+          fractional: decimalToFractional(o.price),
           ...(o.point !== undefined && { point: o.point }),
         })),
       })),
@@ -55,13 +107,9 @@ export async function getOdds(sportKey, teamName) {
   return formatEvents(events, teamName)
 }
 
-// Fetches goalscorer markets. Falls back gracefully if the plan doesn't support them.
 export async function getGoalscorerOdds(sportKey, teamName) {
-  const scorerMarkets = 'player_goal_scorer_first,player_goal_scorer_anytime'
-
-  // Try scorer markets first, fall back to h2h if unavailable
   const [scorerEvents, matchEvents] = await Promise.all([
-    fetchMarkets(sportKey, scorerMarkets).catch(() => null),
+    fetchMarkets(sportKey, 'player_goal_scorer_first,player_goal_scorer_anytime').catch(() => null),
     fetchMarkets(sportKey, 'h2h'),
   ])
 

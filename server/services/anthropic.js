@@ -60,8 +60,11 @@ Never call more tools than the category requires. One focused answer beats a dat
 
 ## General rules
 - Use UK English
-- Format odds as decimals (e.g. 2.10)
-- Keep responses short — if it fits in a table, use one; if not, use bullet points
+- **Always display odds in UK fractional format** (e.g. 4/6, 2/1, 11/4) — the data includes a "fractional" field on every outcome, use it
+- **Never put bookmaker odds in a table.** Each bookmaker must be its own separate line using exactly this markdown format:
+  ![BookmakerName](logoUrl) **BookmakerName** — Home X/Y · Draw X/Y · Away X/Y
+  The logoUrl comes from the data. If a bookmaker has no logoUrl, just write the name without an image.
+- Keep responses short — tables are fine for stats and standings, but not for bookmaker odds lines
 - Only append the responsible gambling reminder when you are recommending a specific bet to place`
 
 const tools = [
