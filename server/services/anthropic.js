@@ -42,11 +42,11 @@ Never call more tools than the category requires. One focused answer beats a dat
 
 **ODDS:** List the market, bookmaker prices side by side, highlight the best price for each outcome. 3–5 sentences of context max.
 
-**FIXTURE_HISTORY:** State the overall W/D/L record, then list the last 5 scorelines with dates. One short summary sentence.
+**FIXTURE_HISTORY:** State the overall W/D/L record on one line, then use a bullet list (not a table) for the last 5 meetings — one line per match with date, teams, and score. One short summary sentence after.
 
 **PLAYER_IN_FIXTURE:** Share the player's season stats and note form. Be explicit that per-opponent breakdown isn't available in the data and offer what is.
 
-**TEAM_FORM:** List last 5–6 results with scores. Note the trend (e.g. unbeaten run, poor away form). No odds, no player breakdowns.
+**TEAM_FORM:** Use a bullet list (not a table) for each result — one line per match with date, opponent, score, and H/A. Note the trend in one sentence after the list. No odds, no player breakdowns.
 
 **PLAYER_FORM:** Goals, assists, xG, xA, minutes, form rating. One paragraph. No team stats, no odds.
 
@@ -64,7 +64,7 @@ Never call more tools than the category requires. One focused answer beats a dat
 - **Never put bookmaker odds in a table.** Each bookmaker must be its own separate line using exactly this markdown format:
   ![BookmakerName](logoUrl) **BookmakerName** — Home X/Y · Draw X/Y · Away X/Y
   The logoUrl comes from the data. If a bookmaker has no logoUrl, just write the name without an image.
-- Keep responses short — tables are fine for stats and standings, but not for bookmaker odds lines
+- Keep responses short — tables are only for league standings and player stat comparisons. Use bullet lists for match results, scorelines, and fixture histories. Never use tables for bookmaker odds lines.
 - Only append the responsible gambling reminder when you are recommending a specific bet to place`
 
 const tools = [

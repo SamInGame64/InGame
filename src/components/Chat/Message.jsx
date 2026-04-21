@@ -1,4 +1,5 @@
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const markdownComponents = {
   img({ src, alt }) {
@@ -66,6 +67,9 @@ const markdownComponents = {
   },
   ul({ children }) {
     return <ul style={{ paddingLeft: '16px', margin: '6px 0' }}>{children}</ul>
+  },
+  ol({ children }) {
+    return <ol style={{ paddingLeft: '16px', margin: '6px 0' }}>{children}</ol>
   },
   li({ children }) {
     return <li style={{ marginBottom: '4px', lineHeight: 1.5 }}>{children}</li>
@@ -139,7 +143,7 @@ export default function Message({ message }) {
         {isUser ? (
           message.content
         ) : (
-          <ReactMarkdown components={markdownComponents}>
+          <ReactMarkdown components={markdownComponents} remarkPlugins={[remarkGfm]}>
             {message.content}
           </ReactMarkdown>
         )}
