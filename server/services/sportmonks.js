@@ -259,9 +259,9 @@ async function seedH2H(team1, team2) {
     upsertTeam(db, { id: team1.id, name: team1.name, short_name: team1.short_name })
     upsertTeam(db, { id: team2.id, name: team2.name, short_name: team2.short_name })
 
-    // Fetch all H2H fixtures with player stats
+    // Fetch all H2H fixtures with events (goals, assists, cards per player)
     const fixtures = await smFetchAll(`/fixtures/head-to-head/${team1.id}/${team2.id}`, {
-      include: 'participants;scores;playerStatistics.player;playerStatistics.details',
+      include: 'participants;scores;events',
     })
 
     console.log(`[DB Seed] Fetched ${fixtures.length} fixtures from Sportmonks`)
@@ -275,48 +275,60 @@ async function seedH2H(team1, team2) {
       const home = f.participants?.find(p => p.meta?.location === 'home')
       const away = f.participants?.find(p => p.meta?.location === 'away')
       const scores = f.scores || []
-      const finalScore = scores.find(s => s.description === 'CURRENT' || s.description === 'FT')
+
+      // Sportmonks scores: { description, score: { participant: 'home'|'away', goals } }
+      const homeScoreObj = scores.find(s => (s.description === 'FT' || s.description === 'CURRENT') && s.score?.participant === 'home')
+      const awayScoreObj = scores.find(s => (s.description === 'FT' || s.description === 'CURRENT') && s.score?.participant === 'away')
 
       upsertFixture(db, {
         id: f.id,
         season_id: f.season_id || 0,
         home_team_id: home?.id || 0,
         away_team_id: away?.id || 0,
-        home_score: finalScore?.score?.participant === 'home' ? finalScore.score.goals : (finalScore?.score?.home ?? null),
-        away_score: finalScore?.score?.participant === 'away' ? finalScore.score.goals : (finalScore?.score?.away ?? null),
-        date: f.starting_at || f.starting_at_timestamp || '',
+        home_score: homeScoreObj?.score?.goals ?? null,
+        away_score: awayScoreObj?.score?.goals ?? null,
+        date: f.starting_at || '',
         competition: 'Premier League',
       })
 
-      // Persist player stats
-      const playerStats = f.playerStatistics || []
-      for (const ps of playerStats) {
-        if (!ps.player_id && !ps.player?.id) continue
-        const playerId = ps.player_id || ps.player?.id
-        const playerName = ps.player?.display_name || ps.player?.name || 'Unknown'
+      // Extract player stats from events (type_id 14=goal, 18=yellow, 19/20=red)
+      const events = f.events || []
+      const playerStatsMap = new Map()
 
-        upsertPlayer(db, {
-          id: playerId,
-          name: playerName,
-          position: ps.player?.position_id || null,
-          nationality: null,
-        })
+      const ensurePlayer = (id, name) => {
+        if (!id) return null
+        if (!playerStatsMap.has(id)) {
+          playerStatsMap.set(id, {
+            player_id: id, player_name: name || 'Unknown', team_id: null,
+            goals: 0, assists: 0, minutes: 0,
+            yellow_cards: 0, red_cards: 0, shots: 0, shots_on_target: 0, rating: null,
+          })
+        }
+        return playerStatsMap.get(id)
+      }
 
-        const getStat = typeId => ps.details?.find(d => d.type_id === typeId)?.value?.total ?? 0
+      for (const ev of events) {
+        if (ev.type_id === 14) {
+          // Goal
+          const scorer = ensurePlayer(ev.player_id, ev.player_name)
+          if (scorer) { scorer.goals += 1; scorer.team_id = ev.participant_id }
+          // Assist
+          if (ev.related_player_id) {
+            const assister = ensurePlayer(ev.related_player_id, ev.related_player_name)
+            if (assister) assister.assists += 1
+          }
+        } else if (ev.type_id === 18) {
+          const p = ensurePlayer(ev.player_id, ev.player_name)
+          if (p) { p.yellow_cards += 1; p.team_id = ev.participant_id }
+        } else if (ev.type_id === 19 || ev.type_id === 20) {
+          const p = ensurePlayer(ev.player_id, ev.player_name)
+          if (p) { p.red_cards += 1; p.team_id = ev.participant_id }
+        }
+      }
 
-        upsertPlayerFixtureStat(db, {
-          player_id: playerId,
-          fixture_id: f.id,
-          team_id: ps.team_id || null,
-          goals: getStat(52),
-          assists: getStat(79),
-          minutes: getStat(119),
-          yellow_cards: getStat(84),
-          red_cards: getStat(83),
-          shots: getStat(86),
-          shots_on_target: getStat(87),
-          rating: ps.rating || null,
-        })
+      for (const stat of playerStatsMap.values()) {
+        upsertPlayer(db, { id: stat.player_id, name: stat.player_name, position: null, nationality: null })
+        upsertPlayerFixtureStat(db, { ...stat, fixture_id: f.id })
         totalStatRows++
       }
     }
@@ -380,6 +392,17 @@ export async function getH2H(team1Name, team2Name) {
   }
 }
 
+async function getTeamById(teamId) {
+  const key = `id:${teamId}`
+  if (_teamCache.has(key)) return _teamCache.get(key)
+  const data = await smFetch(`/teams/${teamId}`)
+  const t = data.data
+  if (!t) return null
+  const result = { id: t.id, name: t.name, short_name: t.short_code || t.name }
+  _teamCache.set(key, result)
+  return result
+}
+
 export async function getPlayerHistoryVsOpponent(playerName, opponentTeamName) {
   try {
     const [player, opponent] = await Promise.all([
@@ -392,15 +415,24 @@ export async function getPlayerHistoryVsOpponent(playerName, opponentTeamName) {
 
     const db = getDb()
 
-    // We need the player's team to seed the right H2H pairing
-    // Fetch player's current team from Sportmonks
-    const playerData = await smFetch(`/players/${player.id}`, { include: 'currentTeam' })
-    const playerTeam = playerData.data?.current_team
-    if (!playerTeam) {
+    // Resolve player's current team via teams include (active contract = end > today)
+    const playerData = await smFetch(`/players/${player.id}`, { include: 'teams' })
+    const teamEntries = playerData.data?.teams || []
+    const today = new Date().toISOString().split('T')[0]
+    const activeEntry = teamEntries
+      .filter(t => !t.end || t.end > today)
+      .sort((a, b) => new Date(b.start || 0) - new Date(a.start || 0))[0]
+
+    if (!activeEntry) {
       return { found: false, reason: 'no_team', message: `Could not determine ${playerName}'s current team.` }
     }
 
-    const team1 = { id: playerTeam.id, name: playerTeam.name, short_name: playerTeam.short_name || playerTeam.name }
+    const playerTeam = await getTeamById(activeEntry.team_id)
+    if (!playerTeam) {
+      return { found: false, reason: 'no_team', message: `Could not resolve team for ${playerName}.` }
+    }
+
+    const team1 = playerTeam
     const team2 = opponent
 
     if (!isH2HSeeded(db, team1.id, team2.id)) {
